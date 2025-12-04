@@ -22,10 +22,21 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=5, help="Max number of results")
     parser.add_argument("--by-date", action="store_true", help="Sort by recency")
     parser.add_argument(
-        "--hydrate", type=int, default=0, help="Hydrate first N results for full details"
+        "--hydrate",
+        type=int,
+        default=0,
+        help="Hydrate first N results for full details",
     )
     parser.add_argument(
-        "--table", action="store_true", help="Output formatted markdown table instead of dicts"
+        "--table",
+        action="store_true",
+        help="Output formatted markdown table instead of dicts",
+    )
+    parser.add_argument(
+        "--max-duration",
+        type=int,
+        default=60,
+        help="Only include videos with duration <= this many seconds (set to 0 to disable)",
     )
 
     args = parser.parse_args()
@@ -40,7 +51,12 @@ def main() -> None:
         formatter=formatter,
     )
 
-    out = service.search(query=args.query, limit=args.limit, sort_by_date=args.by_date)
+    out = service.search(
+        query=args.query,
+        limit=args.limit,
+        sort_by_date=args.by_date,
+        max_duration_seconds=(None if args.max_duration == 0 else args.max_duration),
+    )
     results = out["results"]
 
     # Print primary results
@@ -59,10 +75,15 @@ def main() -> None:
             limit=args.limit,
             sort_by_date=args.by_date,
             hydrate_ids=ids,
+            max_duration_seconds=(
+                None if args.max_duration == 0 else args.max_duration
+            ),
         )
+
         print("\nHydrated details:")
         for d in hydrated_out["hydrated"] or []:
             print(d)
+
 
 if __name__ == "__main__":
     main()
