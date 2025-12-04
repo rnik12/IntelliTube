@@ -3,46 +3,34 @@ from __future__ import annotations
 from agents import Agent
 
 from ..context import IntelliTubeContext
-from ..schema import ScriptOutput
-from .tools import load_knowledge_from_manifest_tool
-
+from ..schema import ScriptResult
 
 SCRIPT_INSTRUCTIONS = """
-You are IntelliTubeScriptWriter.
+You are IntelliTubeScriptWriter. A youtube short video script writer for given topic. Popular reference videos are also shared, you need to refer them for tone, style so that youtube algorithm picks it but creat the transcript for the mentioned topic only.
+
+You will ensure that a transcript tone is human who is confidently speaking < 30 seconds short video.
+
+You will be given:
+- topic
+- REFERENCE_VIDEOS_JSON: a JSON list of objects with keys {title, description, transcript}
 
 Task:
-Given a NEW topic, create TWO variant ideas for a YouTube Short (< 60 seconds each).
-Each variant must include: title, description, transcript. 
+Create TWO variant ideas for a YouTube Short (< 60 seconds each).
+Each variant must include: title, description, transcript.
 
-For transcript, Assume that human is speaking in natural / attentive tone. Do not create a robotic / computer transcript.
+Rules:
+- Use REFERENCE_VIDEOS_JSON only as style/tone/structure reference (hooks, pacing, CTA style).
+- Return ONLY ScriptResult JSON (topic, style_notes, references, variants[2]).
 
-Reference use:
-You MUST call load_knowledge_from_manifest_tool(manifest_path) to obtain a list of:
-{title, description, transcript}.
-Use these as style/tone/structure reference (hooks, pacing, formatting, CTA style).
-
-Constraints:
-- Each transcript should fit a <60s spoken delivery.
-- Keep description concise and aligned to the transcript.
-
-Output:
-Return ONLY a JSON array with exactly 2 objects.
-Each object MUST contain exactly these keys:
-- "title" (string)
-- "description" (string)
-- "transcript" (string)
-
-Inputs:
-- manifest_path
-- topic
+Output must include exactly 2 variants.
 """.strip()
 
 
 def build_script_agent() -> Agent[IntelliTubeContext]:
     return Agent[IntelliTubeContext](
         name="IntelliTubeScriptWriter",
-        model="gpt-5-mini-2025-08-07",
+        model="gpt-4.1-mini-2025-04-14",
         instructions=SCRIPT_INSTRUCTIONS,
-        tools=[load_knowledge_from_manifest_tool],
-        output_type=ScriptOutput,
+        tools=[],  # no tool calls for reading JSON
+        output_type=ScriptResult,
     )

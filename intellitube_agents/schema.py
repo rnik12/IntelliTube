@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
@@ -14,63 +16,29 @@ class SearchResultRow(BaseModel):
 
 
 class TranscriptArtifact(BaseModel):
+    # IMPORTANT: No transcript text here. Only references/metadata.
     video_id: str
     url: str
-    title: str
-    description: str
     transcript_path: str
-    updated_at: Optional[str] = None
-    transcript_chars: int = 0
 
 
-class ManifestWriteOutput(BaseModel):
-    manifest_path: str
-    video_count: int
-
-
-# ---------- Manifest schema ----------
-
-class ManifestEntry(BaseModel):
-    rank: int
-    video_id: str
-    url: str
-
-    channel: Optional[str] = None
-    duration_seconds: Optional[int] = None
-    upload_date: Optional[str] = None
-
-    transcript_path: str
-    transcript_chars: int = 0
-    transcript_updated_at: Optional[str] = None
-
-    title: str = ""
-    description: str = ""
-
-
-class ManifestFile(BaseModel):
-    schema_version: str = "intellitube.manifest.v1"
-    created_at: str
+class IndexerResult(BaseModel):
     search_query: str
-    limit: int
-    model: str
-    entries: List[ManifestEntry]
+    requested_limit: int
+    found: int
+    transcripts: List[TranscriptArtifact]  # ordered to match search results
 
 
-class ManifestPointer(BaseModel):
-    manifest_path: str
-    video_count: int
+# ---------- Script agent: supply knowledge via Python (not tools) ----------
+
+class VideoVariant(BaseModel):
+    title: str = Field(..., description="Short, clickable title for the YouTube Short.")
+    description: str = Field(..., description="Description aligned with transcript.")
+    transcript: str = Field(..., description="Spoken script intended for <60s delivery.")
 
 
-# ---------- Script agent output ----------
-
-class KnowledgeItem(BaseModel):
-    title: str
-    description: str
-    transcript: str
-
-
-class ScriptOutput(BaseModel):
-    topic: str = Field(..., description="Requested topic for the new script.")
-    style_notes: List[str] = Field(default_factory=list, description="Style traits learned from references.")
-    references: List[str] = Field(default_factory=list, description="Reference titles used.")
-    transcript: str = Field(..., description="Newly generated transcript/script.")
+class ScriptResult(BaseModel):
+    topic: str
+    style_notes: List[str] = Field(default_factory=list)
+    references: List[str] = Field(default_factory=list)
+    variants: List[VideoVariant] = Field(..., min_length=2, max_length=2)

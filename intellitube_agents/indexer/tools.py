@@ -2,20 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from agents import RunContextWrapper, function_tool
 
 from ..context import IntelliTubeContext
-from ..schema import (
-    SearchResultRow,
-    TranscriptArtifact,
-    ManifestFile,
-    ManifestEntry,
-    ManifestWriteOutput,
-)
+from ..schema import SearchResultRow, TranscriptArtifact
 
 
 @function_tool
@@ -26,7 +19,7 @@ def youtube_search_tool(
     sort_by_date: bool = False,
     max_duration_seconds: Optional[int] = 60,
 ) -> list[SearchResultRow]:
-    """Search YouTube and return strict-typed results."""
+    """Search YouTube and return strict-typed results (no transcript text)."""
     q = (query or "").strip()
     if not q or limit <= 0:
         return []
@@ -49,11 +42,7 @@ def youtube_search_tool(
     if not isinstance(results, list):
         raise TypeError("youtube_search_tool expected list results from DictFormatter.")
 
-    typed: list[SearchResultRow] = []
-    for r in results:
-        # DictFormatter returns dict; validate into a strict Pydantic model
-        typed.append(SearchResultRow.model_validate(r))
-    return typed
+    return [SearchResultRow.model_validate(r) for r in results]
 
 
 @function_tool
@@ -65,8 +54,9 @@ async def youtube_transcribe_cache_tool(
     prompt: Optional[str] = None,
     concurrency: int = 3,
 ) -> list[TranscriptArtifact]:
-    """Transcribe URLs and ensure cache/transcripts/<video_id>.json exists.
-    Returns only artifact metadata and transcript path (no transcript text).
+    """Ensure cache/transcripts/<video_id>.json exists for each URL.
+
+    Returns ONLY artifact references (path + small stats), NOT transcripts.
     """
     cleaned = [u.strip() for u in (urls or []) if u and u.strip()]
     if not cleaned:
@@ -93,7 +83,7 @@ async def youtube_transcribe_cache_tool(
             updated_at: Optional[str] = None
             tlen = 0
 
-            # Read cached JSON to extract stats (not transcript output)
+            # Read cached JSON to extract stats WITHOUT returning transcript text
             try:
                 with transcript_path.open("r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -107,68 +97,8 @@ async def youtube_transcribe_cache_tool(
             return TranscriptArtifact(
                 video_id=video_id,
                 url=str(payload.get("url") or u),
-                title=str(payload.get("title") or ""),
-                description=str(payload.get("description") or ""),
                 transcript_path=str(transcript_path),
-                updated_at=updated_at,
-                transcript_chars=tlen,
             )
 
     artifacts = await asyncio.gather(*[one(u) for u in cleaned])
     return list(artifacts)
-
-
-@function_tool
-def write_manifest_tool(
-    ctx: RunContextWrapper[IntelliTubeContext],
-    search_query: str,
-    limit: int,
-    model: str,
-    search_results: list[SearchResultRow],
-    transcript_artifacts: list[TranscriptArtifact],
-) -> ManifestWriteOutput:
-    """Write a durable manifest JSON referencing cached transcript JSON files."""
-    tmap = {a.video_id: a for a in (transcript_artifacts or [])}
-
-    entries: list[ManifestEntry] = []
-    rank = 1
-
-    for r in (search_results or []):
-        ta = tmap.get(r.id)
-        if not ta:
-            continue  # skip if transcription failed / missing
-
-        entries.append(
-            ManifestEntry(
-                rank=rank,
-                video_id=r.id,
-                url=r.url or ta.url,
-                channel=r.channel,
-                duration_seconds=r.duration_seconds,
-                upload_date=r.upload_date,
-                transcript_path=ta.transcript_path,
-                transcript_chars=ta.transcript_chars,
-                transcript_updated_at=ta.updated_at,
-                title=ta.title or r.title,
-                description=ta.description or "",
-            )
-        )
-        rank += 1
-
-    created_at = datetime.now(timezone.utc).isoformat()
-    manifest = ManifestFile(
-        created_at=created_at,
-        search_query=str(search_query),
-        limit=int(limit),
-        model=str(model),
-        entries=entries,
-    )
-
-    safe = "".join(ch if ch.isalnum() else "-" for ch in (search_query or "query"))[:60].strip("-")
-    fname = f"{created_at.replace(':','').replace('.','')}_{safe}_{len(entries)}.json"
-    manifest_path = (ctx.context.manifest_dir / fname).resolve()
-
-    with manifest_path.open("w", encoding="utf-8") as f:
-        json.dump(manifest.model_dump(), f, ensure_ascii=False, indent=2, sort_keys=True)
-
-    return ManifestWriteOutput(manifest_path=str(manifest_path), video_count=len(entries))
